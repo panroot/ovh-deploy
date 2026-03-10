@@ -138,18 +138,26 @@ async def download_all_models():
 async def idle_watchdog():
     """Auto-shutdown on idle or max uptime exceeded."""
     global last_request_time
+    shutdown_requested = False
     while True:
         await asyncio.sleep(60)  # check every minute
+        if shutdown_requested:
+            continue
         idle_min = (time.time() - last_request_time) / 60
         uptime_min = (time.time() - STARTUP_TIME) / 60
 
+        reason = None
         if IDLE_TIMEOUT > 0 and idle_min >= IDLE_TIMEOUT:
-            logger.warning(f"IDLE SHUTDOWN: No requests for {IDLE_TIMEOUT} min. Exiting to save costs.")
-            os._exit(0)
+            reason = f"IDLE SHUTDOWN: No requests for {IDLE_TIMEOUT} min."
+        elif MAX_UPTIME > 0 and uptime_min >= MAX_UPTIME:
+            reason = f"MAX UPTIME SHUTDOWN: Running for {int(uptime_min)} min (limit: {MAX_UPTIME})."
 
-        if MAX_UPTIME > 0 and uptime_min >= MAX_UPTIME:
-            logger.warning(f"MAX UPTIME SHUTDOWN: Running for {MAX_UPTIME} min. Exiting to save costs.")
-            os._exit(0)
+        if reason:
+            shutdown_requested = True
+            logger.warning(f"{reason} Exiting with error code to prevent OVH restart.")
+            # Exit with code 1 (error) - OVH should move app to FAILED state
+            # instead of restarting when restartAttempts=0
+            os._exit(1)
 
 
 @asynccontextmanager
