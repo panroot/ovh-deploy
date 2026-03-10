@@ -66,7 +66,22 @@ MODELS = {
 async def download_all_models():
     from huggingface_hub import snapshot_download
 
-    for name, info in MODELS.items():
+    # Download order: smallest to largest
+    download_order = [
+        "birefnet",        # ~1 GB
+        "flux-vae",        # ~2 GB
+        "sd-1.5",          # ~5 GB
+        "sdxl-base",       # ~7 GB
+        "flux-klein-4b",   # ~16 GB
+        "llava-13b",       # ~26 GB
+        "qwen-2.5-14b",   # ~28 GB
+        "flux-schnell",    # ~34 GB
+        "qwen-2.5-32b",   # ~64 GB
+        "qwen-2.5-72b",   # ~144 GB
+    ]
+
+    for name in download_order:
+        info = MODELS[name]
         local_dir = os.path.join(MODEL_DIR, name)
         if os.path.exists(local_dir) and os.listdir(local_dir):
             logger.info(f"SKIP: {name} already downloaded")
