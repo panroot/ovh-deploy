@@ -235,13 +235,18 @@ async def model_status(model_name: str):
     if model_name not in MODELS:
         raise HTTPException(status_code=404, detail=f"Unknown model: {model_name}")
     local_dir = os.path.join(MODEL_DIR, model_name)
-    files = []
+    files = {}
     if os.path.exists(local_dir):
-        for f in sorted(os.listdir(local_dir)):
-            fp = os.path.join(local_dir, f)
-            is_link = os.path.islink(fp)
-            size = os.path.getsize(fp) if os.path.isfile(fp) and not is_link else 0
-            files.append({"name": f, "size": size, "is_dir": os.path.isdir(fp), "is_link": is_link})
+        for root, dirs, fnames in os.walk(local_dir):
+            rel = os.path.relpath(root, local_dir)
+            prefix = "" if rel == "." else rel + "/"
+            for f in sorted(fnames):
+                fp = os.path.join(root, f)
+                try:
+                    size = os.path.getsize(fp)
+                except:
+                    size = -1
+                files[prefix + f] = size
     return {
         "model": model_name,
         "loaded": model_name in loaded_models,
