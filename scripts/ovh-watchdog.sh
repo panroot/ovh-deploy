@@ -59,7 +59,7 @@ COST_H = $COST_PER_HOUR
 
 for app in apps:
     state = app.get('status', {}).get('state', '')
-    if state not in ('RUNNING', 'SCALING', 'INITIALIZING'):
+    if state not in ('RUNNING', 'SCALING', 'INITIALIZING', 'FAILED'):
         continue
 
     app_id = app['id']
@@ -85,7 +85,7 @@ for app in apps:
         log "KILL: $name - cost ${cost}PLN exceeds limit ${MAX_COST_PLN}PLN"
         send_alert "KOSZT PRZEKROCZONY - WYŁĄCZAM" \
             "Aplikacja: $name ($app_id)\nCzas pracy: ${hours}h\nKoszt: ${cost} PLN\nLimit: ${MAX_COST_PLN} PLN\n\nAplikacja zostala WYLACZONA automatycznie."
-        ovhai app delete "$app_id" --force 2>/dev/null
+        ovhai app stop "$app_id" 2>/dev/null
         continue
     fi
 
@@ -94,7 +94,7 @@ for app in apps:
         log "KILL: $name - uptime ${hours}h exceeds limit ${MAX_HOURS}h"
         send_alert "CZAS PRZEKROCZONY - WYŁĄCZAM" \
             "Aplikacja: $name ($app_id)\nCzas pracy: ${hours}h\nLimit: ${MAX_HOURS}h\nKoszt: ${cost} PLN\n\nAplikacja zostala WYLACZONA automatycznie."
-        ovhai app delete "$app_id" --force 2>/dev/null
+        ovhai app stop "$app_id" 2>/dev/null
         continue
     fi
 

@@ -1,10 +1,12 @@
 #!/bin/bash
-# Stop OVH AI Deploy model server (saves costs)
+# Stop OVH AI Deploy model server (saves costs, keeps config)
 # Usage: ./ovh-stop.sh
+#        ./ovh-stop.sh --delete   (full delete, not just stop)
 
 set -e
 
 APP_NAME="model-server"
+DELETE_MODE="${1:-}"
 
 echo "=== Stopping OVH AI Deploy: $APP_NAME ==="
 
@@ -23,11 +25,17 @@ if [ -z "$APPS" ]; then
 fi
 
 for APP_ID in $APPS; do
-    echo "Stopping app: $APP_ID"
-    ovhai app delete "$APP_ID"
-    echo "Stopped: $APP_ID"
+    if [ "$DELETE_MODE" = "--delete" ]; then
+        echo "Deleting app: $APP_ID"
+        ovhai app delete "$APP_ID" --force
+        echo "Deleted: $APP_ID"
+    else
+        echo "Stopping app: $APP_ID"
+        ovhai app stop "$APP_ID"
+        echo "Stopped: $APP_ID (use ovh-start.sh to resume)"
+    fi
 done
 
 echo ""
-echo "All instances stopped. No more costs."
+echo "GPU costs stopped."
 echo "To start again: ./ovh-start.sh"

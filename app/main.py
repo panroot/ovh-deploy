@@ -154,9 +154,8 @@ async def idle_watchdog():
 
         if reason:
             shutdown_requested = True
-            logger.warning(f"{reason} Exiting with error code to prevent OVH restart.")
-            # Exit with code 1 (error) - OVH should move app to FAILED state
-            # instead of restarting when restartAttempts=0
+            logger.warning(f"{reason} Exiting. Watchdog will stop the app.")
+            # Exit with code 1 - OVH moves to FAILED, watchdog does proper stop
             os._exit(1)
 
 

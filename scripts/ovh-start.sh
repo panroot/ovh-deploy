@@ -17,7 +17,7 @@ echo "=== Starting OVH AI Deploy: $APP_NAME ==="
 echo "Auto-shutdown: idle=${IDLE_TIMEOUT}min, max=${MAX_UPTIME}min"
 
 # Check if already running
-EXISTING=$(ovhai app list --output json 2>/dev/null | python3 -c "
+RUNNING_ID=$(ovhai app list --output json 2>/dev/null | python3 -c "
 import sys, json
 apps = json.load(sys.stdin)
 for a in apps:
@@ -26,14 +26,45 @@ for a in apps:
         break
 " 2>/dev/null || true)
 
-if [ -n "$EXISTING" ]; then
-    URL=$(ovhai app get "$EXISTING" --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['status']['url'])")
+if [ -n "$RUNNING_ID" ]; then
+    URL=$(ovhai app get "$RUNNING_ID" --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['status']['url'])")
     echo "Already running: $URL"
-    echo "App ID: $EXISTING"
+    echo "App ID: $RUNNING_ID"
     exit 0
 fi
 
-# Create new app with persistent Object Storage for models
+# Check if STOPPED instance exists - just start it
+STOPPED_ID=$(ovhai app list -s STOPPED,FAILED --output json 2>/dev/null | python3 -c "
+import sys, json
+apps = json.load(sys.stdin)
+for a in apps:
+    if a.get('spec',{}).get('name') == '$APP_NAME':
+        print(a['id'])
+        break
+" 2>/dev/null || true)
+
+if [ -n "$STOPPED_ID" ]; then
+    echo "Found stopped instance: $STOPPED_ID"
+    echo "Starting..."
+    ovhai app start "$STOPPED_ID"
+
+    for i in $(seq 1 60); do
+        STATE=$(ovhai app get "$STOPPED_ID" --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['status']['state'])")
+        if [ "$STATE" = "RUNNING" ]; then
+            URL=$(ovhai app get "$STOPPED_ID" --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['status']['url'])")
+            echo "App is RUNNING!"
+            echo "URL: $URL"
+            echo "App ID: $STOPPED_ID"
+            exit 0
+        fi
+        echo "  State: $STATE (waiting...)"
+        sleep 5
+    done
+    echo "Timeout. Check: ovhai app get $STOPPED_ID"
+    exit 1
+fi
+
+# No existing app - create new one
 echo "Creating new app with persistent storage..."
 ovhai app run \
     --name "$APP_NAME" \
@@ -62,11 +93,11 @@ for i in $(seq 1 60); do
     if [ "$STATE" = "RUNNING" ]; then
         echo "App is RUNNING!"
         echo "URL: $APP_URL"
-        echo "Models downloading in background. Check: curl $APP_URL/models"
+        echo "Models ready. Check: curl $APP_URL/models"
         exit 0
     fi
     echo "  State: $STATE (waiting...)"
-    sleep 10
+    sleep 5
 done
 
 echo "Timeout waiting for app to start. Check: ovhai app get $APP_ID"
