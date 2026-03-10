@@ -63,6 +63,10 @@ MODELS = {
 
 # ── Auto-download on startup ───────────────────────────────────────────────
 
+HF_TOKEN = os.environ.get("HF_TOKEN", None)
+MAX_RETRIES = 5
+
+
 async def download_all_models():
     from huggingface_hub import snapshot_download
 
@@ -75,7 +79,7 @@ async def download_all_models():
         "flux-klein-4b",   # ~16 GB
         "llava-13b",       # ~26 GB
         "qwen-2.5-14b",   # ~28 GB
-        "flux-schnell",    # ~34 GB
+        "flux-schnell",    # ~34 GB (gated - needs HF_TOKEN)
         "qwen-2.5-32b",   # ~64 GB
         "qwen-2.5-72b",   # ~144 GB
     ]
@@ -90,18 +94,36 @@ async def download_all_models():
 
         download_status[name] = {"status": "downloading"}
         logger.info(f"DOWNLOADING: {name} from {info['repo']}...")
-        try:
-            await asyncio.to_thread(
-                snapshot_download,
-                repo_id=info["repo"],
-                local_dir=local_dir,
-                ignore_patterns=["*.md", "*.txt", ".gitattributes"],
-            )
-            download_status[name] = {"status": "completed"}
-            logger.info(f"DONE: {name}")
-        except Exception as e:
-            download_status[name] = {"status": "error", "error": str(e)}
-            logger.error(f"FAILED: {name}: {e}")
+
+        success = False
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                await asyncio.to_thread(
+                    snapshot_download,
+                    repo_id=info["repo"],
+                    local_dir=local_dir,
+                    ignore_patterns=["*.md", "*.txt", ".gitattributes"],
+                    token=HF_TOKEN,
+                    max_workers=2,
+                )
+                download_status[name] = {"status": "completed"}
+                logger.info(f"DONE: {name}")
+                success = True
+                break
+            except Exception as e:
+                err = str(e)
+                if "401" in err or "403" in err:
+                    download_status[name] = {"status": "error", "error": f"Auth required: {err}"}
+                    logger.error(f"FAILED: {name}: needs HF_TOKEN with accepted license. Skipping.")
+                    break
+                wait = min(30 * attempt, 120)
+                logger.warning(f"RETRY {attempt}/{MAX_RETRIES} for {name} in {wait}s: {err[:200]}")
+                download_status[name] = {"status": "downloading", "retry": attempt}
+                await asyncio.sleep(wait)
+
+        if not success and download_status[name].get("status") != "error":
+            download_status[name] = {"status": "error", "error": f"Failed after {MAX_RETRIES} retries"}
+            logger.error(f"FAILED: {name} after {MAX_RETRIES} retries")
 
 
 @asynccontextmanager
@@ -186,6 +208,8 @@ async def download_model(model_name: str):
                 repo_id=info["repo"],
                 local_dir=local_dir,
                 ignore_patterns=["*.md", "*.txt", ".gitattributes"],
+                token=HF_TOKEN,
+                max_workers=2,
             )
             download_status[model_name] = {"status": "completed"}
         except Exception as e:
