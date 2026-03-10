@@ -305,12 +305,17 @@ async def redownload_model(model_name: str):
         return {"status": "already_downloading"}
 
     async def _rdl():
+        import subprocess
         info = MODELS[model_name]
         local_dir = os.path.join(MODEL_DIR, model_name)
         download_status[model_name] = {"status": "deleting"}
         try:
             if os.path.exists(local_dir):
-                await asyncio.to_thread(shutil.rmtree, local_dir)
+                # Use rm -rf for FUSE compatibility (shutil.rmtree may not work on FUSE)
+                await asyncio.to_thread(
+                    subprocess.run, ["rm", "-rf", local_dir], check=True, timeout=300
+                )
+                logger.info(f"Deleted {local_dir}")
             download_status[model_name] = {"status": "downloading"}
             logger.info(f"RE-DOWNLOADING: {model_name} from {info['repo']}...")
             await asyncio.to_thread(
