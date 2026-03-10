@@ -36,8 +36,14 @@ COPY app/ /app/
 COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
 
-# Create model directory
-RUN mkdir -p ${MODEL_DIR} ${HF_HOME}
+# Create directories writable by non-root (OVH runs as uid 42420)
+RUN mkdir -p ${MODEL_DIR} ${HF_HOME} \
+    /tmp/nginx_client_body /tmp/nginx_proxy /tmp/nginx_fastcgi \
+    /tmp/nginx_uwsgi /tmp/nginx_scgi \
+    && chmod -R 777 /tmp/nginx_* \
+    && chmod -R 777 ${MODEL_DIR} ${HF_HOME} \
+    && chmod -R 777 /var/lib/nginx /var/log/nginx /etc/nginx \
+    && chmod 777 /app /scripts
 
 WORKDIR /app
 
