@@ -1,7 +1,9 @@
 import os
+import sys
+import time
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -11,8 +13,14 @@ logger = logging.getLogger(__name__)
 
 MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models")
 
+# Auto-shutdown settings (env vars, in minutes)
+IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "30"))       # 30 min bez requestów = shutdown
+MAX_UPTIME = int(os.environ.get("MAX_UPTIME", "480"))          # 8h max uptime = shutdown
+STARTUP_TIME = time.time()
+
 loaded_models = {}
 download_status = {}
+last_request_time = time.time()
 
 
 # ── Model registry ──────────────────────────────────────────────────────────
@@ -127,15 +135,44 @@ async def download_all_models():
             logger.error(f"FAILED: {name} after {MAX_RETRIES} retries")
 
 
+async def idle_watchdog():
+    """Auto-shutdown on idle or max uptime exceeded."""
+    global last_request_time
+    while True:
+        await asyncio.sleep(60)  # check every minute
+        idle_min = (time.time() - last_request_time) / 60
+        uptime_min = (time.time() - STARTUP_TIME) / 60
+
+        if IDLE_TIMEOUT > 0 and idle_min >= IDLE_TIMEOUT:
+            logger.warning(f"IDLE SHUTDOWN: No requests for {IDLE_TIMEOUT} min. Exiting to save costs.")
+            os._exit(0)
+
+        if MAX_UPTIME > 0 and uptime_min >= MAX_UPTIME:
+            logger.warning(f"MAX UPTIME SHUTDOWN: Running for {MAX_UPTIME} min. Exiting to save costs.")
+            os._exit(0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting model server. Downloading models in background...")
-    task = asyncio.create_task(download_all_models())
+    logger.info(f"Auto-shutdown: idle={IDLE_TIMEOUT}min, max_uptime={MAX_UPTIME}min")
+    dl_task = asyncio.create_task(download_all_models())
+    wd_task = asyncio.create_task(idle_watchdog())
     yield
-    task.cancel()
+    dl_task.cancel()
+    wd_task.cancel()
 
 
 app = FastAPI(title="OVH Model Server", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def track_activity(request: Request, call_next):
+    global last_request_time
+    if request.url.path != "/health":  # healthcheck nie resetuje idle timer
+        last_request_time = time.time()
+    response = await call_next(request)
+    return response
 
 
 # ── Requests ────────────────────────────────────────────────────────────────
@@ -161,6 +198,23 @@ class ImageRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok", "loaded_models": list(loaded_models.keys())}
+
+
+@app.get("/status")
+async def server_status():
+    now = time.time()
+    idle_min = round((now - last_request_time) / 60, 1)
+    uptime_min = round((now - STARTUP_TIME) / 60, 1)
+    cost_pln = round(uptime_min / 60 * 7.24, 2)
+    return {
+        "uptime_min": uptime_min,
+        "idle_min": idle_min,
+        "idle_shutdown_at_min": IDLE_TIMEOUT,
+        "max_uptime_shutdown_at_min": MAX_UPTIME,
+        "idle_remaining_min": round(max(0, IDLE_TIMEOUT - idle_min), 1),
+        "uptime_remaining_min": round(max(0, MAX_UPTIME - uptime_min), 1),
+        "estimated_cost_pln": cost_pln,
+    }
 
 
 @app.get("/models")

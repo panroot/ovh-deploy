@@ -1,6 +1,8 @@
 #!/bin/bash
 # Start OVH AI Deploy model server
-# Usage: ./ovh-start.sh
+# Usage: ./ovh-start.sh [IDLE_TIMEOUT_MIN] [MAX_UPTIME_MIN]
+# Example: ./ovh-start.sh 30 480   (30min idle, 8h max)
+# Example: ./ovh-start.sh 60 120   (1h idle, 2h max)
 
 set -e
 
@@ -8,8 +10,11 @@ APP_NAME="model-server"
 IMAGE="ghcr.io/panroot/ovh-deploy:latest"
 FLAVOR="l40s-1-gpu"
 HF_TOKEN="${HF_TOKEN:-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}"
+IDLE_TIMEOUT="${1:-30}"    # domyslnie 30 min
+MAX_UPTIME="${2:-480}"     # domyslnie 8h (480 min)
 
 echo "=== Starting OVH AI Deploy: $APP_NAME ==="
+echo "Auto-shutdown: idle=${IDLE_TIMEOUT}min, max=${MAX_UPTIME}min"
 
 # Check if already running
 EXISTING=$(ovhai app list --output json 2>/dev/null | python3 -c "
@@ -37,6 +42,8 @@ ovhai app run \
     --default-http-port 8080 \
     --unsecure-http \
     --env "HF_TOKEN=$HF_TOKEN" \
+    --env "IDLE_TIMEOUT=$IDLE_TIMEOUT" \
+    --env "MAX_UPTIME=$MAX_UPTIME" \
     --volume ai-models@GRA:/workspace/models:rw:cache \
     "$IMAGE" \
     --output json > /tmp/ovh-app-result.json
