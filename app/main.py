@@ -275,6 +275,49 @@ async def download_model(model_name: str):
     return {"status": "download_started", "model": model_name}
 
 
+@app.post("/models/{model_name}/redownload")
+async def redownload_model(model_name: str):
+    """Delete existing model files and re-download (fixes broken symlinks)."""
+    import shutil
+    from huggingface_hub import snapshot_download
+
+    if model_name not in MODELS:
+        raise HTTPException(status_code=404, detail=f"Unknown model: {model_name}")
+
+    if model_name in loaded_models:
+        raise HTTPException(status_code=400, detail="Unload model first")
+
+    if download_status.get(model_name, {}).get("status") == "downloading":
+        return {"status": "already_downloading"}
+
+    async def _rdl():
+        info = MODELS[model_name]
+        local_dir = os.path.join(MODEL_DIR, model_name)
+        download_status[model_name] = {"status": "deleting"}
+        try:
+            if os.path.exists(local_dir):
+                await asyncio.to_thread(shutil.rmtree, local_dir)
+            download_status[model_name] = {"status": "downloading"}
+            logger.info(f"RE-DOWNLOADING: {model_name} from {info['repo']}...")
+            await asyncio.to_thread(
+                snapshot_download,
+                repo_id=info["repo"],
+                local_dir=local_dir,
+                ignore_patterns=["*.md", "*.txt", ".gitattributes"],
+                token=HF_TOKEN,
+                max_workers=2,
+                local_dir_use_symlinks=False,
+            )
+            download_status[model_name] = {"status": "completed"}
+            logger.info(f"RE-DOWNLOAD DONE: {model_name}")
+        except Exception as e:
+            download_status[model_name] = {"status": "error", "error": str(e)}
+            logger.error(f"RE-DOWNLOAD FAILED: {model_name}: {e}")
+
+    asyncio.create_task(_rdl())
+    return {"status": "redownload_started", "model": model_name}
+
+
 # ── Load / Unload ──────────────────────────────────────────────────────────
 
 @app.post("/models/{model_name}/load")
@@ -333,7 +376,11 @@ def _load_model_sync(model_name: str, info: dict, local_dir: str):
 
     elif model_type == "vae":
         from diffusers import AutoencoderKL
-        vae = AutoencoderKL.from_pretrained(local_dir, torch_dtype=torch.float16)
+        vae_dir = os.path.join(local_dir, "vae")
+        if os.path.exists(vae_dir):
+            vae = AutoencoderKL.from_pretrained(vae_dir, torch_dtype=torch.float16)
+        else:
+            vae = AutoencoderKL.from_pretrained(local_dir, torch_dtype=torch.float16)
         vae.to("cuda")
         return {"vae": vae}
 
