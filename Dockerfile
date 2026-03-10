@@ -12,38 +12,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11-venv \
     python3.11-dev \
     python3-pip \
-    nginx \
     curl \
     git \
     git-lfs \
-    wget \
     && rm -rf /var/lib/apt/lists/* \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
     && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
 
-# Install pip for python3.11
+# Install pip
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 
 # Python dependencies
 COPY app/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Nginx config
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
-
 # Application code
 COPY app/ /app/
 COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
 
-# Create directories writable by non-root (OVH runs as uid 42420)
+# Writable dirs for non-root (OVH uid 42420)
 RUN mkdir -p ${MODEL_DIR} ${HF_HOME} \
-    /tmp/nginx_client_body /tmp/nginx_proxy /tmp/nginx_fastcgi \
-    /tmp/nginx_uwsgi /tmp/nginx_scgi \
-    && chmod -R 777 /tmp/nginx_* \
-    && chmod -R 777 ${MODEL_DIR} ${HF_HOME} \
-    && chmod -R 777 /var/lib/nginx /var/log/nginx /etc/nginx \
-    && chmod 777 /app /scripts
+    && chmod -R 777 ${MODEL_DIR} ${HF_HOME} /app /scripts
 
 WORKDIR /app
 
