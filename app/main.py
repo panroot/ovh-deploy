@@ -110,7 +110,7 @@ async def download_all_models():
                     snapshot_download,
                     repo_id=info["repo"],
                     local_dir=local_dir,
-                    ignore_patterns=["*.md", "*.txt", ".gitattributes"],
+                    ignore_patterns=["*.md", ".gitattributes"],
                     token=HF_TOKEN,
                     max_workers=2,
                     local_dir_use_symlinks=False,
