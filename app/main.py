@@ -374,8 +374,20 @@ def _load_model_sync(model_name: str, info: dict, local_dir: str):
         return {"model": model, "processor": processor}
 
     elif model_type == "diffusion":
-        from diffusers import DiffusionPipeline
-        pipe = DiffusionPipeline.from_pretrained(local_dir, torch_dtype=torch.float16)
+        from diffusers import (
+            DiffusionPipeline, StableDiffusionPipeline,
+            StableDiffusionXLPipeline, FluxPipeline,
+        )
+        # Use specific pipeline classes to avoid auto-detection issues on FUSE mounts
+        pipeline_map = {
+            "sd-1.5": StableDiffusionPipeline,
+            "sdxl-base": StableDiffusionXLPipeline,
+            "flux-schnell": FluxPipeline,
+            "flux-klein-4b": FluxPipeline,
+        }
+        pipe_cls = pipeline_map.get(model_name, DiffusionPipeline)
+        logger.info(f"Loading {model_name} with {pipe_cls.__name__}")
+        pipe = pipe_cls.from_pretrained(local_dir, torch_dtype=torch.float16, local_files_only=True)
         pipe.to("cuda")
         return {"pipeline": pipe}
 
