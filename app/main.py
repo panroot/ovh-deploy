@@ -234,10 +234,19 @@ async def list_models():
 async def model_status(model_name: str):
     if model_name not in MODELS:
         raise HTTPException(status_code=404, detail=f"Unknown model: {model_name}")
+    local_dir = os.path.join(MODEL_DIR, model_name)
+    files = []
+    if os.path.exists(local_dir):
+        for f in sorted(os.listdir(local_dir)):
+            fp = os.path.join(local_dir, f)
+            is_link = os.path.islink(fp)
+            size = os.path.getsize(fp) if os.path.isfile(fp) and not is_link else 0
+            files.append({"name": f, "size": size, "is_dir": os.path.isdir(fp), "is_link": is_link})
     return {
         "model": model_name,
         "loaded": model_name in loaded_models,
         "download": download_status.get(model_name, {"status": "pending"}),
+        "files": files,
     }
 
 
@@ -337,7 +346,9 @@ async def load_model(model_name: str):
         loaded_models[model_name] = model
         return {"status": "loaded", "model": model_name}
     except Exception as e:
-        logger.error(f"Failed to load {model_name}: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Failed to load {model_name}: {e}\n{tb}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
