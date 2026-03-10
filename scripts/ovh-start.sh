@@ -28,8 +28,8 @@ if [ -n "$EXISTING" ]; then
     exit 0
 fi
 
-# Create new app
-echo "Creating new app..."
+# Create new app with persistent Object Storage for models
+echo "Creating new app with persistent storage..."
 ovhai app run \
     --name "$APP_NAME" \
     --flavor "$FLAVOR" \
@@ -37,6 +37,7 @@ ovhai app run \
     --default-http-port 8080 \
     --unsecure-http \
     --env "HF_TOKEN=$HF_TOKEN" \
+    --volume ai-models@GRA:/workspace/models:rw:cache \
     "$IMAGE" \
     --output json > /tmp/ovh-app-result.json
 
