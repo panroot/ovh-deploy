@@ -105,6 +105,7 @@ async def download_all_models():
                     ignore_patterns=["*.md", "*.txt", ".gitattributes"],
                     token=HF_TOKEN,
                     max_workers=2,
+                    local_dir_use_symlinks=False,
                 )
                 download_status[name] = {"status": "completed"}
                 logger.info(f"DONE: {name}")
@@ -210,6 +211,7 @@ async def download_model(model_name: str):
                 ignore_patterns=["*.md", "*.txt", ".gitattributes"],
                 token=HF_TOKEN,
                 max_workers=2,
+                local_dir_use_symlinks=False,
             )
             download_status[model_name] = {"status": "completed"}
         except Exception as e:
