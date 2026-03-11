@@ -11,8 +11,8 @@
 # Konfiguracja (zmien ponizej):
 # =============================================================================
 
-MAX_COST_PLN=50           # Max koszt na sesje (PLN) - ubij jesli przekroczy
-MAX_HOURS=10              # Max godzin pracy - ubij jesli przekroczy
+MAX_COST_PLN=200          # Max koszt na sesje (PLN) - ubij jesli przekroczy
+MAX_HOURS=24              # Max godzin pracy - ubij jesli przekroczy
 COST_PER_HOUR=8.90        # L40S brutto PLN/h
 ALERT_EMAIL="lukasz@orzechowski.eu"  # Email na alerty
 LOG_FILE="/var/log/ovh-watchdog.log"

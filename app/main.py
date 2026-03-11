@@ -15,7 +15,7 @@ MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models")
 
 # Auto-shutdown settings (env vars, in minutes)
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "30"))       # 30 min bez requestów = shutdown
-MAX_UPTIME = int(os.environ.get("MAX_UPTIME", "480"))          # 8h max uptime = shutdown
+MAX_UPTIME = int(os.environ.get("MAX_UPTIME", "1440"))         # 24h max uptime = shutdown
 STARTUP_TIME = time.time()
 
 loaded_models = {}
