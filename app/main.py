@@ -11,7 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models")
+MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models/data")
 
 # Auto-shutdown settings (env vars, in minutes)
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "30"))       # 30 min bez requestów = shutdown
@@ -156,6 +156,34 @@ class ImageRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok", "loaded_models": list(loaded_models.keys())}
+
+
+@app.get("/debug/storage")
+async def debug_storage():
+    """Show what's on disk for debugging persistence."""
+    import subprocess
+    result = {}
+    mount = "/workspace/models"
+    try:
+        # df for the mount
+        df = subprocess.run(["df", "-h", mount], capture_output=True, text=True, timeout=5)
+        result["df"] = df.stdout.strip()
+    except Exception:
+        pass
+    try:
+        # ls top-level
+        entries = os.listdir(mount) if os.path.exists(mount) else []
+        result["mount_contents"] = entries
+    except Exception as e:
+        result["mount_error"] = str(e)
+    try:
+        entries = os.listdir(MODEL_DIR) if os.path.exists(MODEL_DIR) else []
+        result["model_dir_contents"] = entries
+    except Exception as e:
+        result["model_dir_error"] = str(e)
+    result["MODEL_DIR"] = MODEL_DIR
+    result["HF_HOME"] = os.environ.get("HF_HOME", "not set")
+    return result
 
 
 @app.get("/status")
