@@ -11,7 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models/data")
+MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models")
 
 # Auto-shutdown settings (env vars, in minutes)
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "30"))       # 30 min bez requestów = shutdown
@@ -75,16 +75,65 @@ HF_TOKEN = os.environ.get("HF_TOKEN", None)
 MAX_RETRIES = 5
 
 
-async def check_existing_models():
-    """Check which models are already in Object Storage (no auto-download)."""
+AUTO_DOWNLOAD = os.environ.get("AUTO_DOWNLOAD", "birefnet,qwen-2.5-14b,sd-1.5").split(",")
+
+
+async def download_startup_models():
+    """Download selected models on startup (from HuggingFace, no persistent storage)."""
+    from huggingface_hub import snapshot_download
+
+    # Mark all models
     for name in MODELS:
         local_dir = os.path.join(MODEL_DIR, name)
         if os.path.exists(local_dir) and os.listdir(local_dir):
-            logger.info(f"FOUND: {name} (already in storage)")
             download_status[name] = {"status": "completed"}
+        elif name in AUTO_DOWNLOAD:
+            download_status[name] = {"status": "queued"}
         else:
-            logger.info(f"NOT FOUND: {name} (use POST /models/{name}/download to fetch)")
             download_status[name] = {"status": "not_downloaded"}
+
+    # Download auto-download models
+    for name in AUTO_DOWNLOAD:
+        name = name.strip()
+        if name not in MODELS:
+            continue
+        if download_status.get(name, {}).get("status") == "completed":
+            logger.info(f"SKIP: {name} already present")
+            continue
+
+        info = MODELS[name]
+        local_dir = os.path.join(MODEL_DIR, name)
+        download_status[name] = {"status": "downloading"}
+        logger.info(f"DOWNLOADING: {name} (~startup)")
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                await asyncio.to_thread(
+                    snapshot_download,
+                    repo_id=info["repo"],
+                    local_dir=local_dir,
+                    ignore_patterns=["*.md", ".gitattributes"],
+                    token=HF_TOKEN,
+                    max_workers=4,
+                    local_dir_use_symlinks=False,
+                )
+                download_status[name] = {"status": "completed"}
+                logger.info(f"DONE: {name}")
+                break
+            except Exception as e:
+                err = str(e)
+                if "401" in err or "403" in err:
+                    download_status[name] = {"status": "error", "error": f"Auth: {err[:200]}"}
+                    logger.error(f"FAILED: {name}: auth error, skipping")
+                    break
+                wait = min(30 * attempt, 120)
+                logger.warning(f"RETRY {attempt}/{MAX_RETRIES} for {name}: {err[:200]}")
+                download_status[name] = {"status": "downloading", "retry": attempt}
+                await asyncio.sleep(wait)
+        else:
+            if download_status[name].get("status") != "error":
+                download_status[name] = {"status": "error", "error": f"Failed after {MAX_RETRIES} retries"}
+                logger.error(f"FAILED: {name}")
 
 
 async def idle_watchdog():
@@ -113,11 +162,13 @@ async def idle_watchdog():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting model server (no auto-download, models from Object Storage)")
+    logger.info("Starting model server")
+    logger.info(f"Auto-download: {AUTO_DOWNLOAD}")
     logger.info(f"Auto-shutdown: idle={IDLE_TIMEOUT}min, max_uptime={MAX_UPTIME}min")
-    await check_existing_models()
+    dl_task = asyncio.create_task(download_startup_models())
     wd_task = asyncio.create_task(idle_watchdog())
     yield
+    dl_task.cancel()
     wd_task.cancel()
 
 
@@ -156,34 +207,6 @@ class ImageRequest(BaseModel):
 @app.get("/health")
 async def health():
     return {"status": "ok", "loaded_models": list(loaded_models.keys())}
-
-
-@app.get("/debug/storage")
-async def debug_storage():
-    """Show what's on disk for debugging persistence."""
-    import subprocess
-    result = {}
-    mount = "/workspace/models"
-    try:
-        # df for the mount
-        df = subprocess.run(["df", "-h", mount], capture_output=True, text=True, timeout=5)
-        result["df"] = df.stdout.strip()
-    except Exception:
-        pass
-    try:
-        # ls top-level
-        entries = os.listdir(mount) if os.path.exists(mount) else []
-        result["mount_contents"] = entries
-    except Exception as e:
-        result["mount_error"] = str(e)
-    try:
-        entries = os.listdir(MODEL_DIR) if os.path.exists(MODEL_DIR) else []
-        result["model_dir_contents"] = entries
-    except Exception as e:
-        result["model_dir_error"] = str(e)
-    result["MODEL_DIR"] = MODEL_DIR
-    result["HF_HOME"] = os.environ.get("HF_HOME", "not set")
-    return result
 
 
 @app.get("/status")

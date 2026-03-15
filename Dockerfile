@@ -2,9 +2,9 @@ FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV MODEL_DIR=/workspace/models/data
-ENV HF_HOME=/workspace/models/hf_cache
-ENV TRANSFORMERS_CACHE=/workspace/models/hf_cache
+ENV MODEL_DIR=/workspace/models
+ENV HF_HOME=/workspace/hf_cache
+ENV TRANSFORMERS_CACHE=/workspace/hf_cache
 
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
